@@ -1,0 +1,1560 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>帳本</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500&family=Noto+Sans+TC:wght@300;400;500&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#FAFAF7;--bg2:#F3F1EB;--bg3:#ECEAE2;
+  --ink:#1A1A18;--ink2:#5A5A55;--ink3:#9A9890;
+  --border:#E0DDD4;--border2:#CCC9BE;
+  --green:#7C9E7A;--green-bg:#EEF3EE;
+  --orange:#C4714A;--orange-bg:#F5EDE8;
+  --blue:#5C7A9E;--blue-bg:#EAF0F6;
+  --gold:#B89A5A;--gold-bg:#F7F2E7;
+  --red:#C45A5A;--red-bg:#F5EAEA;
+  --serif:'Noto Serif TC',serif;
+  --sans:'Noto Sans TC',sans-serif;
+  --mono:'DM Mono',monospace;
+}
+html{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px}
+body{max-width:760px;margin:0 auto;padding:0 0 80px;min-height:100vh}
+
+/* Loading */
+.ld{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:300}
+.sp{width:28px;height:28px;border:2px solid var(--border2);border-top-color:var(--ink2);border-radius:50%;animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* Header */
+.site-header{padding:18px 20px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.site-title{font-family:var(--serif);font-size:18px;font-weight:400;letter-spacing:.04em;flex-shrink:0}
+.header-right{display:flex;align-items:center;gap:8px}
+.sync-status{font-size:11px;color:var(--ink3);font-family:var(--mono);display:flex;align-items:center;gap:5px}
+.sync-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;transition:background .3s}
+.sync-dot.ok{background:var(--green)}.sync-dot.err{background:var(--orange)}.sync-dot.loading{background:var(--gold);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Nav — 5 tabs */
+.bnav{position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom)}
+.bnav button{flex:1;padding:7px 1px 5px;border:none;background:none;font-size:8px;color:var(--ink3);display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;font-family:var(--sans);letter-spacing:.02em;transition:color .15s}
+.bnav button .ic{font-size:18px}
+.bnav button.on{color:var(--ink);font-weight:500}
+
+/* Pages */
+.pg{display:none;padding:18px 18px 6px}.pg.on{display:block}
+
+/* Member switcher */
+.member-switcher{display:flex;gap:6px;margin-bottom:18px;background:var(--bg2);border-radius:4px;padding:4px}
+.m-btn{flex:1;padding:7px;border:none;border-radius:3px;background:none;cursor:pointer;font-size:13px;font-family:var(--sans);color:var(--ink3);transition:all .15s;font-weight:400}
+.m-btn.on{background:var(--bg);color:var(--ink);font-weight:500;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.m-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+
+/* Month nav */
+.month-nav{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.month-nav button{width:26px;height:26px;border:1px solid var(--border2);border-radius:50%;background:none;cursor:pointer;color:var(--ink2);display:flex;align-items:center;justify-content:center;font-size:13px}
+.month-nav button:hover{background:var(--bg3)}
+.month-label{font-family:var(--serif);font-size:16px;font-weight:400;letter-spacing:.04em}
+
+/* Metrics */
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:20px}
+.mc{background:var(--bg2);border-radius:4px;padding:12px}
+.mc-label{font-size:10px;color:var(--ink3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;font-family:var(--mono)}
+.mc-val{font-family:var(--mono);font-size:14px}
+.mc-val.inc{color:var(--green)}.mc-val.exp{color:var(--orange)}.mc-val.inv{color:var(--blue)}.mc-val.gold{color:var(--gold)}.mc-val.red{color:var(--red)}
+
+/* Section */
+.sec-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-family:var(--mono);margin-bottom:11px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.mb{margin-bottom:20px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:16px;margin-bottom:12px}
+.card-title{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-family:var(--mono);margin-bottom:12px}
+
+/* Form */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg label{font-size:10px;color:var(--ink3);letter-spacing:.06em;font-family:var(--mono)}
+input,select,textarea{background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:7px 10px;font-size:13px;font-family:var(--sans);color:var(--ink);width:100%;outline:none;transition:border-color .15s;-webkit-appearance:none;appearance:none}
+input:focus,select:focus,textarea:focus{border-color:var(--ink2)}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239A9890' fill='none' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center;padding-right:26px;cursor:pointer}
+.btn-p{background:var(--ink);color:var(--bg);border:none;padding:8px 20px;border-radius:3px;cursor:pointer;font-size:13px;font-family:var(--sans);letter-spacing:.04em;transition:opacity .15s}
+.btn-p:hover{opacity:.8}
+.btn-g{background:none;border:1px solid var(--border2);color:var(--ink2);padding:6px 13px;border-radius:3px;cursor:pointer;font-size:12px;font-family:var(--sans);transition:background .15s}
+.btn-g:hover{background:var(--bg3)}
+.btn-icon{width:24px;height:24px;border:1px solid var(--border2);border-radius:3px;background:none;cursor:pointer;color:var(--ink3);font-size:11px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.btn-icon:hover{background:var(--bg3)}
+.btn-icon.del:hover{background:var(--orange-bg);color:var(--orange);border-color:var(--orange)}
+.btn-icon.ok:hover{background:var(--green-bg);color:var(--green);border-color:var(--green)}
+
+/* Amount input with calculator */
+.amt-wrap{position:relative;display:flex;gap:6px;align-items:center}
+.amt-wrap input{flex:1}
+.calc-btn{width:34px;height:34px;border:1px solid var(--border2);border-radius:3px;background:var(--bg);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;color:var(--ink2)}
+.calc-btn:hover{background:var(--bg3)}
+
+/* Calculator modal */
+.calc-overlay{position:fixed;inset:0;background:rgba(26,26,24,.5);z-index:250;display:none;align-items:flex-end;justify-content:center}
+.calc-overlay.on{display:flex}
+.calc-modal{background:var(--bg);border-radius:12px 12px 0 0;padding:20px;width:100%;max-width:400px}
+.calc-display{background:var(--bg2);border-radius:4px;padding:14px 16px;margin-bottom:14px;text-align:right}
+.calc-expr{font-size:12px;color:var(--ink3);font-family:var(--mono);min-height:18px}
+.calc-result{font-size:28px;font-family:var(--mono);color:var(--ink)}
+.calc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.calc-key{padding:14px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font-size:16px;font-family:var(--mono);cursor:pointer;transition:background .1s;color:var(--ink);text-align:center}
+.calc-key:hover{background:var(--bg3)}
+.calc-key.op{color:var(--blue)}
+.calc-key.action{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.calc-key.action:hover{opacity:.85}
+.calc-key.wide{grid-column:span 2}
+.calc-key.del-key{color:var(--orange)}
+
+/* Account items */
+.acc-item{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border);gap:10px}
+.acc-item:last-child{border-bottom:none}
+.acc-left{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.acc-emoji{font-size:16px;width:28px;text-align:center;flex-shrink:0}
+.acc-name-text{font-size:13px;font-weight:500}
+.acc-sub{font-size:10px;color:var(--ink3);font-family:var(--mono);margin-top:1px}
+.acc-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.acc-bal{font-family:var(--mono);font-size:13px;cursor:pointer;border-bottom:1px dashed var(--border2);padding-bottom:1px}
+.acc-bal:hover{border-bottom-color:var(--ink2)}
+.acc-bal-input{font-family:var(--mono);font-size:13px;width:110px;padding:4px 8px}
+.acc-name-input{font-size:13px;font-weight:500;width:110px;padding:4px 8px}
+.cc-alert{font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:2px;margin-top:2px;display:inline-block}
+.cc-due{background:var(--orange-bg);color:var(--orange)}
+.cc-ok{background:var(--green-bg);color:var(--green)}
+
+/* TX items */
+.tx-list{display:flex;flex-direction:column;gap:2px}
+.tx-item{display:flex;align-items:stretch;border-radius:3px;overflow:hidden;background:var(--bg);border:1px solid var(--border);transition:background .1s}
+.tx-item:hover{background:var(--bg2)}
+.tx-item.editing{background:var(--bg2);border-color:var(--border2)}
+.tx-tab{width:3px;flex-shrink:0}
+.tx-tab.income{background:var(--green)}.tx-tab.expense{background:var(--orange)}.tx-tab.invest{background:var(--blue)}.tx-tab.saving{background:var(--gold)}.tx-tab.contribution{background:var(--gold)}.tx-tab.cc_payment{background:var(--red)}
+.tx-body{display:flex;align-items:center;justify-content:space-between;flex:1;padding:9px 12px;gap:10px}
+.tx-info{flex:1;min-width:0}
+.tx-desc{font-size:13px;color:var(--ink)}
+.tx-meta{font-size:10px;color:var(--ink3);margin-top:2px;font-family:var(--mono)}
+.tx-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.tx-amt{font-family:var(--mono);font-size:13px}
+.tx-amt.income{color:var(--green)}.tx-amt.expense{color:var(--orange)}.tx-amt.invest{color:var(--blue)}.tx-amt.saving{color:var(--gold)}.tx-amt.contribution{color:var(--gold)}.tx-amt.cc_payment{color:var(--red)}
+.tx-actions{display:flex;gap:4px;opacity:0;transition:opacity .15s}
+.tx-item:hover .tx-actions,.tx-item.editing .tx-actions{opacity:1}
+.tx-edit-panel{padding:10px 12px;border-top:1px solid var(--border);background:var(--bg2)}
+.tx-edit-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:10px}
+.tx-edit-grid input,.tx-edit-grid select{font-size:12px;padding:5px 8px}
+.member-tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:2px;font-family:var(--mono);margin-left:4px;vertical-align:middle}
+
+/* Filter */
+.filter-row{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.f-btn{padding:4px 11px;font-size:11px;border:1px solid var(--border2);border-radius:20px;background:none;cursor:pointer;color:var(--ink2);font-family:var(--mono);transition:all .15s}
+.f-btn:hover{background:var(--bg3)}
+.f-btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+/* Add account modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(26,26,24,.45);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
+.modal-overlay.on{display:flex}
+.modal{background:var(--bg);border-radius:6px;padding:22px;width:100%;max-width:440px;position:relative}
+.modal-title{font-family:var(--serif);font-size:16px;font-weight:400;margin-bottom:16px}
+.modal-close{position:absolute;right:14px;top:14px;width:26px;height:26px;border:1px solid var(--border2);border-radius:50%;background:none;cursor:pointer;font-size:13px;color:var(--ink2)}
+
+/* Account type selector */
+.acc-type-selector{display:flex;gap:6px;margin-bottom:14px}
+.acc-type-btn{flex:1;padding:8px;border:1px solid var(--border2);border-radius:3px;background:none;cursor:pointer;font-size:12px;font-family:var(--sans);color:var(--ink2);transition:all .15s;text-align:center}
+.acc-type-btn.on{border-color:var(--ink);color:var(--ink);font-weight:500}
+
+/* CC extra fields */
+.cc-fields{display:none;margin-top:2px;padding-top:12px;border-top:1px solid var(--border)}
+.cc-fields.on{display:block}
+
+/* Credit card bill page */
+.bill-card{border:1px solid var(--border);border-radius:4px;padding:14px;margin-bottom:10px;background:var(--bg)}
+.bill-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.bill-name{font-size:14px;font-weight:500}
+.bill-period{font-size:11px;color:var(--ink3);font-family:var(--mono)}
+.bill-amount{font-family:var(--mono);font-size:18px;color:var(--orange)}
+.bill-meta{font-size:11px;color:var(--ink3);font-family:var(--mono);margin-top:4px}
+.bill-paid{color:var(--green)}
+.bill-due{color:var(--orange)}
+
+/* Goal cards */
+.goal-card{border:1px solid var(--border);border-radius:4px;padding:14px;margin-bottom:10px;background:var(--bg)}
+.goal-card.done{opacity:.6;border-style:dashed}
+.goal-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:10px}
+.goal-name{font-size:14px;font-weight:500}
+.goal-note{font-size:11px;color:var(--ink3);margin-top:2px}
+.goal-actions{display:flex;gap:5px;flex-shrink:0}
+.prog-bar{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;margin:7px 0 4px}
+.prog-fill{height:100%;border-radius:3px;transition:width .4s}
+.prog-labels{display:flex;justify-content:space-between;font-size:10px;font-family:var(--mono);color:var(--ink3)}
+.goal-members{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.member-chip{border-radius:3px;padding:8px 10px;flex:1;min-width:85px}
+.mc-name{font-size:10px;font-family:var(--mono);margin-bottom:3px;opacity:.8}
+.mc-val2{font-family:var(--mono);font-size:13px}
+.mc-pct{font-size:10px;font-family:var(--mono);margin-top:2px;opacity:.7}
+.done-badge{font-size:10px;padding:2px 7px;border-radius:2px;background:var(--green-bg);color:var(--green);font-family:var(--mono);margin-left:6px;vertical-align:middle}
+
+/* Investment page */
+.inv-asset-card{border:1px solid var(--border);border-radius:4px;padding:14px;margin-bottom:10px;background:var(--bg)}
+.inv-asset-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px}
+.inv-asset-name{font-size:14px;font-weight:500}
+.inv-asset-ticker{font-size:11px;color:var(--ink3);font-family:var(--mono);margin-top:2px}
+.inv-stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.inv-stat{background:var(--bg2);border-radius:3px;padding:8px 10px;flex:1;min-width:80px}
+.inv-stat-label{font-size:10px;color:var(--ink3);font-family:var(--mono);margin-bottom:3px}
+.inv-stat-val{font-family:var(--mono);font-size:13px}
+.price-tag{font-size:10px;padding:2px 7px;border-radius:2px;font-family:var(--mono)}
+.price-up{background:var(--green-bg);color:var(--green)}
+.price-down{background:var(--orange-bg);color:var(--orange)}
+.price-flat{background:var(--bg3);color:var(--ink3)}
+
+/* Chart */
+.chart-wrap{position:relative;width:100%;height:195px;margin-bottom:6px}
+.chart-legend{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink3);font-family:var(--mono)}
+.legend-dot{width:10px;height:3px;border-radius:1px;flex-shrink:0}
+
+.member-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px}
+.report-filter{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+
+.empty{text-align:center;padding:28px;color:var(--ink3);font-size:12px;font-family:var(--mono);letter-spacing:.04em}
+.divider{height:1px;background:var(--border);margin:16px 0}
+
+@media(max-width:480px){
+  .form-grid,.tx-edit-grid{grid-template-columns:1fr}
+  .metrics{grid-template-columns:1fr 1fr}
+  .pg{padding:14px 14px 6px}
+}
+</style>
+</head>
+<body>
+
+<div class="ld" id="ld">
+  <div class="sp"></div>
+  <div style="font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace">載入資料中</div>
+</div>
+
+<!-- Calculator Modal -->
+<div class="calc-overlay" id="calc-overlay" onclick="if(event.target===this)closeCalc()">
+  <div class="calc-modal">
+    <div class="calc-display">
+      <div class="calc-expr" id="calc-expr"></div>
+      <div class="calc-result" id="calc-result">0</div>
+    </div>
+    <div class="calc-grid">
+      <button class="calc-key" onclick="calcKey('7')">7</button>
+      <button class="calc-key" onclick="calcKey('8')">8</button>
+      <button class="calc-key" onclick="calcKey('9')">9</button>
+      <button class="calc-key op" onclick="calcKey('÷')">÷</button>
+      <button class="calc-key" onclick="calcKey('4')">4</button>
+      <button class="calc-key" onclick="calcKey('5')">5</button>
+      <button class="calc-key" onclick="calcKey('6')">6</button>
+      <button class="calc-key op" onclick="calcKey('×')">×</button>
+      <button class="calc-key" onclick="calcKey('1')">1</button>
+      <button class="calc-key" onclick="calcKey('2')">2</button>
+      <button class="calc-key" onclick="calcKey('3')">3</button>
+      <button class="calc-key op" onclick="calcKey('−')">−</button>
+      <button class="calc-key" onclick="calcKey('.')">.</button>
+      <button class="calc-key" onclick="calcKey('0')">0</button>
+      <button class="calc-key del-key" onclick="calcKey('⌫')">⌫</button>
+      <button class="calc-key op" onclick="calcKey('+')">＋</button>
+      <button class="calc-key wide" onclick="calcKey('C')">C</button>
+      <button class="calc-key action wide" onclick="calcConfirm()">確定 ＝</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settings-modal" onclick="if(event.target===this)closeSettings()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeSettings()">✕</button>
+    <div class="modal-title">設定</div>
+    <div class="fg" style="margin-bottom:12px"><label>帳本名稱</label><input id="set-title"/></div>
+    <div style="font-size:10px;color:var(--ink3);font-family:'DM Mono',monospace;letter-spacing:.06em;margin-bottom:7px">成員名稱</div>
+    <div id="member-inputs" style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px"></div>
+    <button class="btn-g" onclick="addMemberInput()" style="width:100%;margin-bottom:14px">＋ 新增成員</button>
+    <div class="divider"></div>
+    <div class="fg" style="margin-bottom:14px"><label>Firebase Database URL</label><input id="set-db-url" style="font-size:11px;font-family:'DM Mono',monospace"/></div>
+    <button class="btn-p" onclick="saveSettings()" style="width:100%;margin-bottom:8px">儲存設定</button>
+    <button class="btn-g" onclick="downloadBackup()" style="width:100%">⬇ 下載備份資料 (.json)</button>
+  </div>
+</div>
+
+<!-- Add Account Modal -->
+<div class="modal-overlay" id="add-acc-modal" onclick="if(event.target===this)closeAddAcc()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeAddAcc()">✕</button>
+    <div class="modal-title">新增戶頭</div>
+    <div class="fg" style="margin-bottom:12px"><label>帳戶名稱</label><input id="aa-name" placeholder="例：台新銀行信用卡"/></div>
+    <div style="font-size:10px;color:var(--ink3);font-family:'DM Mono',monospace;margin-bottom:8px;letter-spacing:.06em">帳戶類型</div>
+    <div class="acc-type-selector">
+      <button class="acc-type-btn on" onclick="setAccType('bank',this)">🏦 銀行</button>
+      <button class="acc-type-btn" onclick="setAccType('cash',this)">💵 現金</button>
+      <button class="acc-type-btn" onclick="setAccType('invest',this)">📈 投資</button>
+      <button class="acc-type-btn" onclick="setAccType('cc',this)">💳 信用卡</button>
+      <button class="acc-type-btn" onclick="setAccType('save',this)">🐷 儲蓄</button>
+    </div>
+    <!-- Bank / default -->
+    <div id="aa-bank-fields">
+      <div class="fg" style="margin-bottom:12px"><label>初始餘額</label><input id="aa-bal" type="number" placeholder="0"/></div>
+    </div>
+    <!-- Credit card extra fields -->
+    <div class="cc-fields" id="aa-cc-fields">
+      <div class="form-grid">
+        <div class="fg"><label>結帳日（每月幾號）</label>
+          <select id="aa-stmt-day"></select>
+        </div>
+        <div class="fg"><label>繳費截止日（每月幾號）</label>
+          <select id="aa-due-day"></select>
+        </div>
+      </div>
+      <div class="fg" style="margin-bottom:8px"><label>信用額度（選填）</label>
+        <div style="position:relative">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-family:'DM Mono',monospace;font-size:13px;color:var(--ink3)">$</span>
+          <input id="aa-credit-limit" type="number" placeholder="0" style="padding-left:24px"/>
+        </div>
+      </div>
+    </div>
+    <button class="btn-p" onclick="saveNewAcc()" style="width:100%;margin-top:4px">新增</button>
+  </div>
+</div>
+
+<!-- Edit Goal Modal -->
+<div class="modal-overlay" id="goal-edit-modal" onclick="if(event.target===this)closeGoalEdit()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeGoalEdit()">✕</button>
+    <div class="modal-title">編輯存錢計畫</div>
+    <input type="hidden" id="ge-id"/>
+    <div class="fg" style="margin-bottom:10px"><label>計畫名稱</label><input id="ge-name"/></div>
+    <div class="fg" style="margin-bottom:10px"><label>目標金額</label><input id="ge-target" type="number"/></div>
+    <div class="fg" style="margin-bottom:14px"><label>說明</label><input id="ge-note"/></div>
+    <button class="btn-p" onclick="saveGoalEdit()" style="width:100%">儲存</button>
+  </div>
+</div>
+
+<!-- Add Investment Asset Modal -->
+<div class="modal-overlay" id="inv-asset-modal" onclick="if(event.target===this)closeInvAsset()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeInvAsset()">✕</button>
+    <div class="modal-title" id="ia-modal-title">新增投資項目</div>
+    <input type="hidden" id="ia-edit-id" value=""/>
+    <div class="form-grid">
+      <div class="fg"><label>項目名稱</label><input id="ia-name" placeholder="例：台積電"/></div>
+      <div class="fg"><label>股票代號（選填）</label><input id="ia-ticker" placeholder="例：2330.TW"/></div>
+    </div>
+    <div class="fg" style="margin-bottom:12px"><label>類型</label>
+      <select id="ia-type">
+        <option value="etf">ETF</option>
+        <option value="stock">股票</option>
+        <option value="fund">基金</option>
+        <option value="crypto">加密貨幣</option>
+        <option value="other">其他</option>
+      </select>
+    </div>
+    <button class="btn-p" onclick="saveInvAsset()" style="width:100%" id="ia-save-btn">新增</button>
+    <p style="font-size:11px;color:var(--ink3);margin-top:10px;font-family:'DM Mono',monospace">代號格式：台股請加 .TW（如 0050.TW），美股直接填（如 AAPL）</p>
+  </div>
+</div>
+
+<!-- Edit Investment Transaction Modal -->
+<div class="modal-overlay" id="inv-tx-edit-modal" onclick="if(event.target===this)closeInvTxEdit()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeInvTxEdit()">✕</button>
+    <div class="modal-title">編輯投資記錄</div>
+    <input type="hidden" id="ite-id"/>
+    <div class="form-grid">
+      <div class="fg"><label>金額</label>
+        <div class="amt-wrap"><input id="ite-amt" type="number"/><button class="calc-btn" onclick="openCalc('ite-amt')" title="計算機">⌨</button></div>
+      </div>
+      <div class="fg"><label>股數（選填）</label><input id="ite-shares" type="number"/></div>
+    </div>
+    <div class="fg" style="margin-bottom:10px"><label>描述</label><input id="ite-desc"/></div>
+    <div class="fg" style="margin-bottom:14px"><label>日期</label><input id="ite-date" type="date"/></div>
+    <button class="btn-p" onclick="saveInvTxEdit()" style="width:100%">儲存</button>
+  </div>
+</div>
+
+<header class="site-header">
+  <span class="site-title" id="site-title">帳本</span>
+  <div class="header-right">
+    <div class="sync-status">
+      <div class="sync-dot loading" id="sync-dot"></div>
+      <span id="sync-txt">連線中</span>
+    </div>
+    <button class="btn-g" style="padding:4px 10px;font-size:11px" onclick="openSettings()">⚙ 設定</button>
+  </div>
+</header>
+
+<!-- ① 個人帳本 -->
+<div class="pg on" id="pg-personal">
+  <div class="member-switcher" id="personal-switcher"></div>
+  <div class="month-nav">
+    <button onclick="changeMonth(-1)">&#8592;</button>
+    <span class="month-label" id="p-month"></span>
+    <button onclick="changeMonth(1)">&#8594;</button>
+  </div>
+  <div class="metrics" id="p-metrics"></div>
+
+  <div class="card mb">
+    <div class="card-title">新增記錄</div>
+    <div class="form-grid">
+      <div class="fg"><label>類型</label>
+        <select id="p-type" onchange="onTypeChange()">
+          <option value="expense">支出</option>
+          <option value="income">收入</option>
+          <option value="invest">投資</option>
+          <option value="saving">存入共同帳戶</option>
+          <option value="cc_payment">信用卡帳單繳費</option>
+        </select>
+      </div>
+      <div class="fg"><label>分類</label><select id="p-cat"></select></div>
+      <div class="fg"><label>金額</label>
+        <div class="amt-wrap">
+          <input id="p-amt" type="number" placeholder="0"/>
+          <button class="calc-btn" onclick="openCalc('p-amt')" title="計算機">⌨</button>
+        </div>
+      </div>
+      <div class="fg"><label>描述</label><input id="p-desc" placeholder="例：午餐"/></div>
+      <div class="fg"><label>戶頭</label><select id="p-acc" onchange="onAccChange()"></select></div>
+      <div class="fg" id="p-goal-wrap" style="display:none"><label>存錢計畫</label><select id="p-goal"></select></div>
+      <div class="fg" id="p-inv-wrap" style="display:none"><label>投資項目</label><select id="p-inv-asset"></select></div>
+      <div class="fg" id="p-shares-wrap" style="display:none"><label>股數（選填）</label><input id="p-shares" type="number" placeholder="0"/></div>
+      <div class="fg" id="p-cc-pay-wrap" style="display:none"><label>繳費到信用卡</label><select id="p-cc-target"></select></div>
+      <div class="fg"><label>日期</label><input id="p-date" type="date"/></div>
+    </div>
+    <div id="p-cc-bill-info" style="display:none;font-size:11px;font-family:'DM Mono',monospace;color:var(--blue);margin-bottom:10px;padding:8px;background:var(--blue-bg);border-radius:3px"></div>
+    <button class="btn-p" onclick="addPersonalTx()">新增記錄</button>
+  </div>
+
+  <div class="mb">
+    <div class="sec-label">戶頭餘額</div>
+    <div id="p-accounts"></div>
+    <button class="btn-g" onclick="openAddAcc()" style="width:100%;margin-top:12px">＋ 新增戶頭</button>
+  </div>
+
+  <div>
+    <div class="sec-label" id="p-list-label">所有記錄</div>
+    <div class="filter-row">
+      <button class="f-btn on" onclick="setTxFilter('all',this)">全部</button>
+      <button class="f-btn" onclick="setTxFilter('income',this)">收入</button>
+      <button class="f-btn" onclick="setTxFilter('expense',this)">支出</button>
+      <button class="f-btn" onclick="setTxFilter('invest',this)">投資</button>
+      <button class="f-btn" onclick="setTxFilter('saving',this)">存入</button>
+      <button class="f-btn" onclick="setTxFilter('cc_payment',this)">繳卡費</button>
+    </div>
+    <div class="tx-list" id="p-txlist"></div>
+  </div>
+</div>
+
+<!-- ② 共同帳戶 -->
+<div class="pg" id="pg-shared">
+  <div class="month-nav">
+    <button onclick="changeMonth(-1)">&#8592;</button>
+    <span class="month-label" id="s-month"></span>
+    <button onclick="changeMonth(1)">&#8594;</button>
+  </div>
+  <div class="metrics" id="s-metrics"></div>
+  <div class="mb">
+    <div class="sec-label">成員累計存入</div>
+    <div class="member-summary-grid" id="s-member-summary"></div>
+  </div>
+  <div class="card mb">
+    <div class="card-title">新增共同支出 / 收入</div>
+    <div class="form-grid">
+      <div class="fg"><label>類型</label>
+        <select id="s-type" onchange="updateCatSelect('s-cat','shared')">
+          <option value="expense">共同支出</option>
+          <option value="income">共同收入</option>
+        </select>
+      </div>
+      <div class="fg"><label>分類</label><select id="s-cat"></select></div>
+      <div class="fg"><label>金額</label>
+        <div class="amt-wrap">
+          <input id="s-amt" type="number" placeholder="0"/>
+          <button class="calc-btn" onclick="openCalc('s-amt')" title="計算機">⌨</button>
+        </div>
+      </div>
+      <div class="fg"><label>描述</label><input id="s-desc" placeholder="例：聚餐"/></div>
+      <div class="fg"><label>日期</label><input id="s-date" type="date"/></div>
+    </div>
+    <button class="btn-p" onclick="addSharedTx()">新增</button>
+  </div>
+  <div>
+    <div class="sec-label">共同帳戶明細</div>
+    <div class="filter-row">
+      <button class="f-btn on" onclick="setSharedFilter('all',this)">全部</button>
+      <button class="f-btn" onclick="setSharedFilter('contribution',this)">存入記錄</button>
+      <button class="f-btn" onclick="setSharedFilter('expense',this)">支出</button>
+      <button class="f-btn" onclick="setSharedFilter('income',this)">收入</button>
+    </div>
+    <div class="tx-list" id="s-txlist"></div>
+  </div>
+</div>
+
+<!-- ③ 投資 -->
+<div class="pg" id="pg-invest">
+  <div class="member-switcher" id="invest-switcher"></div>
+  <div class="metrics" id="inv-metrics"></div>
+  <div class="mb">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;padding-bottom:8px;border-bottom:1px solid var(--border)">
+      <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-family:'DM Mono',monospace">投資項目</span>
+      <button class="btn-g" onclick="openInvAsset()" style="font-size:11px;padding:4px 10px">＋ 新增項目</button>
+    </div>
+    <div id="inv-assets-list"></div>
+  </div>
+  <div>
+    <div class="sec-label">投資記錄</div>
+    <div class="filter-row" id="inv-asset-filter"></div>
+    <div class="tx-list" id="inv-txlist"></div>
+  </div>
+</div>
+
+<!-- ④ 存錢計畫 -->
+<div class="pg" id="pg-goals">
+  <div class="card mb">
+    <div class="card-title">新增存錢計畫</div>
+    <div class="form-grid">
+      <div class="fg"><label>計畫名稱</label><input id="g-name" placeholder="例：一起去日本"/></div>
+      <div class="fg"><label>目標金額</label><input id="g-target" type="number" placeholder="0"/></div>
+      <div class="fg" style="grid-column:1/-1"><label>說明（選填）</label><input id="g-note" placeholder="例：預計 2025 年春天"/></div>
+    </div>
+    <button class="btn-p" onclick="addGoal()">新增計畫</button>
+  </div>
+  <div id="g-active-section">
+    <div class="sec-label">進行中</div>
+    <div id="g-active-list"></div>
+  </div>
+  <div id="g-done-section" style="margin-top:18px;display:none">
+    <div class="sec-label">🎉 已達成目標</div>
+    <div id="g-done-list"></div>
+  </div>
+</div>
+
+<!-- ⑤ 報表 -->
+<div class="pg" id="pg-report">
+  <div class="month-nav">
+    <button onclick="changeMonth(-1)">&#8592;</button>
+    <span class="month-label" id="r-month"></span>
+    <button onclick="changeMonth(1)">&#8594;</button>
+  </div>
+  <div class="report-filter" id="report-switcher"></div>
+  <div class="metrics" id="r-metrics"></div>
+  <div class="mb">
+    <div class="sec-label">近 6 個月趨勢</div>
+    <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+    <div class="chart-legend" id="trend-legend"></div>
+  </div>
+  <div>
+    <div class="sec-label">本月支出分類</div>
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start">
+      <div class="chart-wrap" style="height:160px"><canvas id="catChart"></canvas></div>
+      <div id="cat-legend" style="padding-top:4px"></div>
+    </div>
+  </div>
+</div>
+
+<nav class="bnav">
+  <button class="on" id="nav-personal" onclick="goPage('personal',this)"><div class="ic">📒</div>個人帳本</button>
+  <button id="nav-shared" onclick="goPage('shared',this)"><div class="ic">🤝</div>共同帳戶</button>
+  <button id="nav-invest" onclick="goPage('invest',this)"><div class="ic">📈</div>投資</button>
+  <button id="nav-goals" onclick="goPage('goals',this)"><div class="ic">🎯</div>存錢計畫</button>
+  <button id="nav-report" onclick="goPage('report',this)"><div class="ic">📊</div>報表</button>
+</nav>
+
+<script>
+// ============================================================
+// 🔥 Firebase
+// ============================================================
+var FIREBASE_DB_URL = 'https://our-kakeibo-62a51-default-rtdb.firebaseio.com/';
+
+// ============================================================
+// Categories
+// ============================================================
+var CATS = {
+  expense:    ['飲食','居住','交通','日用品','娛樂','服飾美容','醫療保健','教育學習','投資理財','人情禮金','旅遊','其他'],
+  income:     ['薪資','兼職','被動收入','獎金','補助津貼','其他'],
+  invest:     ['股票ETF','基金','加密貨幣','房地產','其他'],
+  saving:     ['存入共同帳戶'],
+  cc_payment: ['信用卡繳費'],
+  shared_expense: ['飲食','旅遊','居住','日用品','娛樂','交通','人情禮金','其他'],
+  shared_income:  ['共同收入','利息','其他']
+};
+
+var MEMBER_COLORS = [
+  {color:'#7C9E7A', bg:'#EEF3EE'},
+  {color:'#7A6BAE', bg:'#EEEAF6'},
+  {color:'#C4714A', bg:'#F5EDE8'},
+  {color:'#5C7A9E', bg:'#EAF0F6'},
+];
+var CAT_COLORS = ['#C4714A','#7C9E7A','#5C7A9E','#B89A5A','#9E7CAE','#4A9E9E','#9E9E7C','#C4974A'];
+var ACC_ICONS  = {bank:'🏦',cash:'💵',invest:'📈',cc:'💳',save:'🐷'};
+var INV_TYPE   = {etf:'ETF',stock:'股票',fund:'基金',crypto:'加密貨幣',other:'其他'};
+var TYPE_LABEL = {income:'收入',expense:'支出',invest:'投資',saving:'存入',contribution:'存入',cc_payment:'繳卡費'};
+
+var fmt     = n => Math.round(Number(n)).toLocaleString('zh-TW');
+var fmtF    = n => Number(n).toLocaleString('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2});
+var today   = () => new Date().toISOString().slice(0,10);
+
+// ============================================================
+// DB State
+// ============================================================
+var DB = {
+  settings:     {title:'我們的帳本', members:['我','他']},
+  accounts:     [],   // {id,name,type,icon,balance,member, [stmtDay,dueDay,creditLimit]}
+  transactions: [],   // personal txs
+  sharedTxs:    [],
+  goals:        [],
+  invAssets:    [],   // {id,name,ticker,type,member}
+  invTxs:       []    // {id,assetId,member,amount,shares,date,desc,price?}
+};
+var UI = {
+  month:new Date().getMonth(), year:new Date().getFullYear(),
+  page:'personal', activeMember:null,
+  invMember:null,
+  txFilter:'all', sharedFilter:'all', reportView:'all', invAssetFilter:'all',
+  editingTxId:null, editingAccId:null,
+  saveTmr:null,
+  calcTarget:null
+};
+var tChart=null, cChart=null, db, dbRef;
+var calcExpr='', calcDisplay='0';
+
+// ============================================================
+// Firebase
+// ============================================================
+function initFirebase(url){
+  try{firebase.apps.forEach(a=>a.delete());}catch(e){}
+  try{
+    firebase.initializeApp({databaseURL:url});
+    db=firebase.database(); dbRef=db.ref('kakeibo');
+    setSync('loading','連線中');
+    dbRef.on('value',snap=>{
+      var d=snap.val()||{};
+      if(d.settings) DB.settings=Object.assign({title:'我們的帳本',members:['我','他']},d.settings);
+      DB.accounts    =Array.isArray(d.accounts)     ?d.accounts:[];
+      DB.transactions=Array.isArray(d.transactions) ?d.transactions:[];
+      DB.sharedTxs   =Array.isArray(d.sharedTxs)   ?d.sharedTxs:[];
+      DB.goals       =Array.isArray(d.goals)        ?d.goals:[];
+      DB.invAssets   =Array.isArray(d.invAssets)    ?d.invAssets:[];
+      DB.invTxs      =Array.isArray(d.invTxs)       ?d.invTxs:[];
+      if(!UI.activeMember||!DB.settings.members.includes(UI.activeMember)) UI.activeMember=DB.settings.members[0];
+      if(!UI.invMember||!DB.settings.members.includes(UI.invMember)) UI.invMember=DB.settings.members[0];
+      setSync('ok','已同步 '+new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'}));
+      document.getElementById('ld').style.display='none';
+      document.getElementById('site-title').textContent=DB.settings.title||'帳本';
+      renderAll();
+    },()=>{setSync('err','連線失敗');document.getElementById('ld').style.display='none';});
+  }catch(e){setSync('err','Firebase 錯誤');document.getElementById('ld').style.display='none';}
+}
+
+function save(){
+  clearTimeout(UI.saveTmr);
+  UI.saveTmr=setTimeout(()=>{
+    if(!dbRef)return;
+    setSync('loading','儲存中');
+    dbRef.set({settings:DB.settings,accounts:DB.accounts,transactions:DB.transactions,sharedTxs:DB.sharedTxs,goals:DB.goals,invAssets:DB.invAssets,invTxs:DB.invTxs})
+      .then(()=>setSync('ok','已儲存 '+new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})))
+      .catch(()=>setSync('err','儲存失敗'));
+  },600);
+}
+function setSync(s,m){
+  document.getElementById('sync-dot').className='sync-dot '+(s==='ok'?'ok':s==='err'?'err':'loading');
+  document.getElementById('sync-txt').textContent=m;
+}
+function downloadBackup(){
+  var blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='帳本備份_'+new Date().toLocaleDateString('zh-TW').replace(/\//g,'-')+'.json'; a.click();
+}
+
+// ============================================================
+// Calculator
+// ============================================================
+function openCalc(targetId){
+  UI.calcTarget=targetId; calcExpr=''; calcDisplay='0';
+  updateCalcDisplay(); document.getElementById('calc-overlay').classList.add('on');
+}
+function closeCalc(){ document.getElementById('calc-overlay').classList.remove('on'); }
+function updateCalcDisplay(){
+  document.getElementById('calc-expr').textContent=calcExpr;
+  document.getElementById('calc-result').textContent=calcDisplay;
+}
+function calcKey(k){
+  if(k==='C'){calcExpr='';calcDisplay='0';}
+  else if(k==='⌫'){
+    calcExpr=calcExpr.slice(0,-1);
+    try{calcDisplay=calcExpr?String(eval(calcExpr.replace('×','*').replace('÷','/').replace('−','-'))):'0';}catch(e){calcDisplay=calcExpr||'0';}
+  }
+  else if(['÷','×','−','+'].includes(k)){
+    calcExpr+=k; calcDisplay=k;
+  }
+  else{
+    calcExpr+=k;
+    try{var v=eval(calcExpr.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-'));if(isFinite(v))calcDisplay=String(Math.round(v*100)/100);}catch(e){}
+  }
+  updateCalcDisplay();
+}
+function calcConfirm(){
+  try{
+    var v=eval(calcExpr.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-'));
+    if(isFinite(v)&&UI.calcTarget){
+      document.getElementById(UI.calcTarget).value=Math.round(v*100)/100;
+    }
+  }catch(e){}
+  closeCalc();
+}
+
+// ============================================================
+// Member colour helpers
+// ============================================================
+function memberColor(m){
+  var i=(DB.settings.members||[]).indexOf(m);
+  return MEMBER_COLORS[i>=0?i:0];
+}
+function memberTag(m){
+  if(!m)return '';
+  var c=memberColor(m);
+  return `<span class="member-tag" style="background:${c.bg};color:${c.color}">${m}</span>`;
+}
+
+// ============================================================
+// Nav
+// ============================================================
+function goPage(pg,el){
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.bnav button').forEach(b=>b.classList.remove('on'));
+  document.getElementById('pg-'+pg).classList.add('on'); el.classList.add('on');
+  UI.page=pg; UI.editingTxId=null; UI.editingAccId=null;
+  renderPage(pg);
+}
+function changeMonth(d){
+  UI.month+=d;
+  if(UI.month>11){UI.month=0;UI.year++;}
+  if(UI.month<0){UI.month=11;UI.year--;}
+  renderPage(UI.page);
+}
+function renderPage(pg){
+  if(pg==='personal') renderPersonal();
+  else if(pg==='shared') renderShared();
+  else if(pg==='invest') renderInvest();
+  else if(pg==='goals') renderGoals();
+  else if(pg==='report') renderReport();
+}
+function renderAll(){
+  buildSwitchers(); populateSelects();
+  renderPersonal(); renderShared(); renderInvest(); renderGoals();
+  if(UI.page==='report') renderReport();
+}
+
+// ============================================================
+// Switchers
+// ============================================================
+function buildSwitchers(){
+  var members=DB.settings.members||[];
+  ['personal-switcher','invest-switcher'].forEach(id=>{
+    var isinv=id.includes('invest');
+    document.getElementById(id).innerHTML=members.map((m,i)=>{
+      var c=MEMBER_COLORS[i]||MEMBER_COLORS[0];
+      var active=(isinv?UI.invMember:UI.activeMember)===m;
+      return `<button class="m-btn${active?' on':''}" onclick="${isinv?'switchInvMember':'switchMember'}('${m}')">
+        <span class="m-dot" style="background:${c.color}"></span>${m}
+      </button>`;
+    }).join('');
+  });
+}
+function switchMember(m){UI.activeMember=m;UI.editingTxId=null;UI.editingAccId=null;buildSwitchers();populateSelects();renderPersonal();}
+function switchInvMember(m){UI.invMember=m;buildSwitchers();renderInvest();}
+
+function buildReportSwitcher(){
+  var members=DB.settings.members||[];
+  var opts=[{key:'all',label:'全部'},...members.map(m=>({key:'m_'+m,label:m})),{key:'shared',label:'共同帳戶'},{key:'invest',label:'投資'}];
+  document.getElementById('report-switcher').innerHTML=opts.map(o=>`<button class="f-btn${UI.reportView===o.key?' on':''}" onclick="switchReport('${o.key}')">${o.label}</button>`).join('');
+}
+function switchReport(v){UI.reportView=v;buildReportSwitcher();renderReport();}
+
+// ============================================================
+// Selects
+// ============================================================
+function populateSelects(){
+  // personal account
+  var accs=DB.accounts.filter(a=>a.member===UI.activeMember);
+  var pa=document.getElementById('p-acc');
+  if(pa) pa.innerHTML=accs.length?accs.map(a=>`<option value="${a.id}">${ACC_ICONS[a.type]||'🏦'} ${a.name}</option>`).join(''):'<option value="">— 先新增戶頭 —</option>';
+  // goal select
+  var pg2=document.getElementById('p-goal');
+  if(pg2) pg2.innerHTML='<option value="">— 不指定 —</option>'+DB.goals.filter(g=>!g.done).map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+  // inv asset select
+  var pia=document.getElementById('p-inv-asset');
+  if(pia) pia.innerHTML='<option value="">— 選擇項目 —</option>'+DB.invAssets.filter(a=>a.member===UI.activeMember).map(a=>`<option value="${a.id}">${a.name}${a.ticker?' ('+a.ticker+')':''}</option>`).join('');
+  // cc target for payment
+  var pct=document.getElementById('p-cc-target');
+  if(pct) pct.innerHTML=DB.accounts.filter(a=>a.type==='cc'&&a.member===UI.activeMember).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')||'<option value="">— 無信用卡 —</option>';
+  // cats
+  updateCatSelect('p-cat',document.getElementById('p-type')?.value||'expense');
+  updateCatSelect('s-cat','shared');
+  // stmt/due day dropdowns for add acc modal
+  ['aa-stmt-day','aa-due-day'].forEach(id=>{
+    var sel=document.getElementById(id); if(!sel) return;
+    sel.innerHTML=Array.from({length:31},(_,i)=>`<option value="${i+1}">每月 ${i+1} 號</option>`).join('');
+  });
+}
+function updateCatSelect(selId,type){
+  var sel=document.getElementById(selId); if(!sel) return;
+  var cats;
+  if(selId==='s-cat'){var st=document.getElementById('s-type')?.value||'expense';cats=st==='income'?CATS.shared_income:CATS.shared_expense;}
+  else cats=CATS[type]||CATS.expense;
+  sel.innerHTML=cats.map(c=>`<option value="${c}">${c}</option>`).join('');
+}
+function onTypeChange(){
+  var t=document.getElementById('p-type').value;
+  document.getElementById('p-goal-wrap').style.display   =t==='saving'?'block':'none';
+  document.getElementById('p-inv-wrap').style.display    =t==='invest'?'block':'none';
+  document.getElementById('p-shares-wrap').style.display =t==='invest'?'block':'none';
+  document.getElementById('p-cc-pay-wrap').style.display =t==='cc_payment'?'block':'none';
+  document.getElementById('p-cc-bill-info').style.display='none';
+  updateCatSelect('p-cat',t);
+  onAccChange();
+}
+function onAccChange(){
+  var t=document.getElementById('p-type').value;
+  var accId=parseInt(document.getElementById('p-acc')?.value);
+  var info=document.getElementById('p-cc-bill-info');
+  if(t==='expense'&&accId){
+    var acc=DB.accounts.find(a=>a.id===accId);
+    if(acc&&acc.type==='cc'&&acc.stmtDay){
+      var dateVal=document.getElementById('p-date').value||today();
+      var period=getBillPeriod(acc,dateVal);
+      info.style.display='block';
+      info.textContent=`此筆將計入 ${period.stmtLabel} 帳單，繳費截止日：${period.dueLabel}`;
+      return;
+    }
+  }
+  info.style.display='none';
+}
+
+// ============================================================
+// Credit card billing period logic
+// ============================================================
+function getBillPeriod(acc,dateStr){
+  var d=new Date(dateStr); var dm=d.getDate(); var m=d.getMonth(); var y=d.getFullYear();
+  var stmtDay=acc.stmtDay||25; var dueDay=acc.dueDay||15;
+  var stmtM,stmtY,dueM,dueY;
+  if(dm<=stmtDay){stmtM=m;stmtY=y;}
+  else{stmtM=m+1;stmtY=y;if(stmtM>11){stmtM=0;stmtY++;}}
+  dueM=stmtM+1; dueY=stmtY; if(dueM>11){dueM=0;dueY++;}
+  return {
+    stmtLabel:`${stmtY}/${String(stmtM+1).padStart(2,'0')}/${String(stmtDay).padStart(2,'0')}`,
+    dueLabel:`${dueY}/${String(dueM+1).padStart(2,'0')}/${String(dueDay).padStart(2,'0')}`,
+    stmtKey:`${stmtY}-${stmtM+1}`
+  };
+}
+
+// ============================================================
+// Add Account Modal
+// ============================================================
+var currentAccType='bank';
+function openAddAcc(){
+  currentAccType='bank';
+  document.querySelectorAll('.acc-type-btn').forEach(b=>b.classList.remove('on'));
+  document.querySelector('.acc-type-btn').classList.add('on');
+  document.getElementById('aa-cc-fields').classList.remove('on');
+  document.getElementById('aa-name').value=''; document.getElementById('aa-bal').value='';
+  document.getElementById('add-acc-modal').classList.add('on');
+}
+function closeAddAcc(){document.getElementById('add-acc-modal').classList.remove('on');}
+function setAccType(type,el){
+  currentAccType=type;
+  document.querySelectorAll('.acc-type-btn').forEach(b=>b.classList.remove('on')); el.classList.add('on');
+  document.getElementById('aa-cc-fields').classList.toggle('on',type==='cc');
+  document.getElementById('aa-bank-fields').style.display=type==='cc'?'none':'block';
+}
+function saveNewAcc(){
+  var name=document.getElementById('aa-name').value.trim(); if(!name){alert('請輸入帳戶名稱');return;}
+  var acc={id:Date.now(),name,type:currentAccType,icon:ACC_ICONS[currentAccType]||'🏦',member:UI.activeMember};
+  if(currentAccType==='cc'){
+    acc.balance=0; acc.creditLimit=parseFloat(document.getElementById('aa-credit-limit').value)||0;
+    acc.stmtDay=parseInt(document.getElementById('aa-stmt-day').value)||25;
+    acc.dueDay=parseInt(document.getElementById('aa-due-day').value)||15;
+  } else {
+    acc.balance=parseFloat(document.getElementById('aa-bal').value)||0;
+  }
+  DB.accounts.push(acc); closeAddAcc(); save(); renderPersonal(); populateSelects();
+}
+
+// ============================================================
+// Accounts render
+// ============================================================
+function accHtml(a){
+  var ed=UI.editingAccId===a.id;
+  var sub='';
+  if(a.type==='cc'){
+    var unpaid=ccUnpaid(a);
+    var now=new Date(); var dueDay=a.dueDay||15;
+    var nextDue=new Date(now.getFullYear(),now.getMonth(),dueDay); if(nextDue<now) nextDue.setMonth(nextDue.getMonth()+1);
+    var days=Math.ceil((nextDue-now)/(1000*60*60*24));
+    sub=`<div class="acc-sub">未繳 <span style="color:var(--orange);font-family:'DM Mono',monospace">${fmt(unpaid)}</span>`;
+    if(a.creditLimit) sub+=` · 額度剩 ${fmt(a.creditLimit-unpaid)}`;
+    sub+=` · 繳費截止 ${days}天後 (${dueDay}號)</div>`;
+  }
+  return `<div class="acc-item" id="acc-${a.id}">
+    <div class="acc-left">
+      <span class="acc-emoji">${a.icon||'🏦'}</span>
+      <div>
+        ${ed?`<input class="acc-name-input" id="ae-name-${a.id}" value="${a.name}"/>`:`<div class="acc-name-text">${a.name}</div>`}
+        ${sub}
+      </div>
+    </div>
+    <div class="acc-right">
+      ${ed
+        ?`<input class="acc-bal-input" id="ae-bal-${a.id}" type="number" value="${a.balance}"/>
+          <button class="btn-icon ok" onclick="saveAcc(${a.id})">✓</button>
+          <button class="btn-icon" onclick="UI.editingAccId=null;renderPersonal()">✕</button>`
+        :`<span class="acc-bal" onclick="startEditAcc(${a.id})" title="點擊編輯">${fmt(a.balance)}</span>
+          <button class="btn-icon" onclick="startEditAcc(${a.id})">✎</button>
+          <button class="btn-icon del" onclick="delAcc(${a.id})">✕</button>`}
+    </div>
+  </div>`;
+}
+function ccUnpaid(acc){
+  return DB.transactions.filter(t=>t.accId===acc.id&&t.type==='expense').reduce((s,t)=>s+t.amount,0)
+    -DB.transactions.filter(t=>t.ccTargetId===acc.id&&t.type==='cc_payment').reduce((s,t)=>s+t.amount,0);
+}
+function startEditAcc(id){UI.editingAccId=id;renderPersonal();setTimeout(()=>{var i=document.getElementById('ae-bal-'+id);if(i){i.focus();i.select();}},50);}
+function saveAcc(id){
+  var a=DB.accounts.find(x=>x.id===id);if(!a)return;
+  var ni=document.getElementById('ae-name-'+id),bi=document.getElementById('ae-bal-'+id);
+  if(ni&&ni.value.trim()) a.name=ni.value.trim();
+  if(bi) a.balance=parseFloat(bi.value)||0;
+  UI.editingAccId=null; save(); renderPersonal(); populateSelects();
+}
+function delAcc(id){if(!confirm('確定刪除？'))return;DB.accounts=DB.accounts.filter(a=>a.id!==id);save();renderPersonal();populateSelects();}
+
+// ============================================================
+// Personal Transactions
+// ============================================================
+function monthTxs(list,m,y){return list.filter(t=>{var d=new Date(t.date);return d.getMonth()===m&&d.getFullYear()===y;});}
+
+function addPersonalTx(){
+  var amt=parseFloat(document.getElementById('p-amt').value);
+  var desc=document.getElementById('p-desc').value.trim();
+  if(!amt||!desc){alert('請填寫金額和描述');return;}
+  var type=document.getElementById('p-type').value;
+  var cat=document.getElementById('p-cat').value;
+  var accId=document.getElementById('p-acc').value?parseInt(document.getElementById('p-acc').value):null;
+  var date=document.getElementById('p-date').value||today();
+  var txId=Date.now();
+  var tx={id:txId,type,amount:amt,desc,member:UI.activeMember,accId,cat,date};
+  if(type==='saving') tx.goalId=document.getElementById('p-goal').value?parseInt(document.getElementById('p-goal').value):null;
+  if(type==='invest'){
+    tx.invAssetId=document.getElementById('p-inv-asset').value?parseInt(document.getElementById('p-inv-asset').value):null;
+    tx.shares=parseFloat(document.getElementById('p-shares').value)||null;
+  }
+  if(type==='cc_payment'){
+    tx.ccTargetId=document.getElementById('p-cc-target').value?parseInt(document.getElementById('p-cc-target').value):null;
+    // restore credit: deduct from source account, credit card balance reduced (debt decreased)
+    var cc=DB.accounts.find(a=>a.id===tx.ccTargetId);
+    if(cc) cc.balance=Math.max(0,cc.balance-amt); // treat cc balance as debt
+  }
+  // account balance
+  var acc=DB.accounts.find(a=>a.id===accId);
+  if(acc){
+    if(type==='income') acc.balance+=amt;
+    else if(type==='cc_payment') acc.balance-=amt; // deduct from source
+    else if(type!=='invest') acc.balance-=amt;
+    // invest: balance unchanged (money moved to investment)
+    else acc.balance-=amt;
+  }
+  DB.transactions.push(tx);
+  if(type==='saving'){
+    DB.sharedTxs.push({id:txId+1,type:'contribution',amount:amt,desc:UI.activeMember+' 存入',member:UI.activeMember,goalId:tx.goalId,date,cat:'存入',srcTxId:txId});
+  }
+  if(type==='invest'&&tx.invAssetId){
+    DB.invTxs.push({id:txId+2,assetId:tx.invAssetId,member:UI.activeMember,amount:amt,shares:tx.shares||null,date,desc,srcTxId:txId});
+  }
+  document.getElementById('p-amt').value=''; document.getElementById('p-desc').value='';
+  if(document.getElementById('p-shares')) document.getElementById('p-shares').value='';
+  save(); renderAll();
+}
+
+function delPersonalTx(id){
+  if(!confirm('確定刪除？'))return;
+  var tx=DB.transactions.find(t=>t.id===id);if(!tx)return;
+  var acc=DB.accounts.find(a=>a.id===tx.accId);
+  if(acc){
+    if(tx.type==='income') acc.balance-=tx.amount;
+    else acc.balance+=tx.amount;
+  }
+  if(tx.type==='cc_payment'&&tx.ccTargetId){
+    var cc=DB.accounts.find(a=>a.id===tx.ccTargetId);
+    if(cc) cc.balance+=tx.amount;
+  }
+  DB.transactions=DB.transactions.filter(t=>t.id!==id);
+  if(tx.type==='saving') DB.sharedTxs=DB.sharedTxs.filter(t=>t.srcTxId!==id);
+  if(tx.type==='invest') DB.invTxs=DB.invTxs.filter(t=>t.srcTxId?t.srcTxId!==id:!(t.assetId===tx.invAssetId&&t.date===tx.date&&Math.abs(t.amount-tx.amount)<1));
+  save(); renderAll();
+}
+
+function startEditTx(id){UI.editingTxId=id;renderPersonal();}
+function cancelEditTx(){UI.editingTxId=null;renderPersonal();}
+
+function savePersonalTx(id){
+  var tx=DB.transactions.find(t=>t.id===id);if(!tx)return;
+  var oldAmt=tx.amount,oldType=tx.type,oldAccId=tx.accId;
+  var newType=document.getElementById('te-type-'+id).value;
+  var newAmt=parseFloat(document.getElementById('te-amt-'+id).value)||0;
+  var newAccId=document.getElementById('te-acc-'+id).value?parseInt(document.getElementById('te-acc-'+id).value):null;
+  var oldAcc=DB.accounts.find(a=>a.id===oldAccId);
+  if(oldAcc){if(oldType==='income') oldAcc.balance-=oldAmt; else oldAcc.balance+=oldAmt;}
+  tx.type=newType; tx.amount=newAmt; tx.accId=newAccId;
+  tx.desc=document.getElementById('te-desc-'+id).value.trim()||tx.desc;
+  tx.cat=document.getElementById('te-cat-'+id).value;
+  tx.date=document.getElementById('te-date-'+id).value||tx.date;
+  var newAcc=DB.accounts.find(a=>a.id===newAccId);
+  if(newAcc){if(newType==='income') newAcc.balance+=newAmt; else newAcc.balance-=newAmt;}
+  if(oldType==='saving'||newType==='saving'){
+    DB.sharedTxs=DB.sharedTxs.filter(t=>t.srcTxId!==id);
+    if(newType==='saving') DB.sharedTxs.push({id:Date.now()+1,type:'contribution',amount:newAmt,desc:tx.member+' 存入',member:tx.member,goalId:tx.goalId,date:tx.date,cat:'存入',srcTxId:id});
+  }
+  // 同步投資頁的對應記錄
+  if(oldType==='invest'||newType==='invest'){
+    var linkedInvTx=DB.invTxs.find(t=>t.srcTxId===id) || DB.invTxs.find(t=>t.assetId===tx.invAssetId&&Math.abs(t.amount-oldAmt)<1);
+    if(newType==='invest'){
+      if(linkedInvTx){ linkedInvTx.amount=newAmt; linkedInvTx.date=tx.date; linkedInvTx.desc=tx.desc; linkedInvTx.srcTxId=id; }
+      else { DB.invTxs.push({id:Date.now()+2,assetId:tx.invAssetId,member:tx.member,amount:newAmt,shares:tx.shares||null,date:tx.date,desc:tx.desc,srcTxId:id}); }
+    } else if(linkedInvTx){
+      DB.invTxs=DB.invTxs.filter(t=>t.id!==linkedInvTx.id);
+    }
+  }
+  UI.editingTxId=null; save(); renderAll();
+}
+
+function txHtml(t,editable){
+  var ed=editable&&UI.editingTxId===t.id;
+  var tag=memberTag(t.member);
+  var memberAccs=DB.accounts.filter(a=>a.member===t.member);
+  var accOpts=memberAccs.map(a=>`<option value="${a.id}" ${a.id===t.accId?'selected':''}>${a.icon||'🏦'} ${a.name}</option>`).join('');
+  var typeOpts=['income','expense','invest','saving','cc_payment'].map(v=>`<option value="${v}" ${t.type===v?'selected':''}>${TYPE_LABEL[v]||v}</option>`).join('');
+  var catOpts=(CATS[t.type]||CATS.expense).map(c=>`<option value="${c}" ${c===t.cat?'selected':''}>${c}</option>`).join('');
+  var extraMeta='';
+  if(t.type==='invest'&&t.shares) extraMeta=` · ${t.shares} 股`;
+  if(t.type==='cc_payment'){var cc=DB.accounts.find(a=>a.id===t.ccTargetId);if(cc) extraMeta=` → ${cc.name}`;}
+  return `<div class="tx-item${ed?' editing':''}" id="tx-${t.id}">
+    <div class="tx-tab ${t.type}"></div>
+    <div style="flex:1">
+      <div class="tx-body">
+        <div class="tx-info">
+          <div class="tx-desc">${t.desc}${tag}</div>
+          <div class="tx-meta">${t.date}${t.cat?' · '+t.cat:''}${extraMeta}</div>
+        </div>
+        <div class="tx-right">
+          <div class="tx-amt ${t.type}">${t.type==='income'?'＋':'－'}${fmt(t.amount)}</div>
+          ${editable?`<div class="tx-actions">
+            <button class="btn-icon${ed?' ok':''}" onclick="${ed?`savePersonalTx(${t.id})`:`startEditTx(${t.id})`}">${ed?'✓':'✎'}</button>
+            <button class="btn-icon del" onclick="${ed?`cancelEditTx()`:`delPersonalTx(${t.id})`}">✕</button>
+          </div>`:''}
+        </div>
+      </div>
+      ${ed?`<div class="tx-edit-panel">
+        <div class="tx-edit-grid">
+          <div class="fg"><label>類型</label><select id="te-type-${t.id}">${typeOpts}</select></div>
+          <div class="fg"><label>金額</label><input id="te-amt-${t.id}" type="number" value="${t.amount}"/></div>
+          <div class="fg"><label>描述</label><input id="te-desc-${t.id}" value="${t.desc}"/></div>
+          <div class="fg"><label>戶頭</label><select id="te-acc-${t.id}">${accOpts}</select></div>
+          <div class="fg"><label>分類</label><select id="te-cat-${t.id}">${catOpts}</select></div>
+          <div class="fg"><label>日期</label><input id="te-date-${t.id}" type="date" value="${t.date}"/></div>
+        </div>
+        <div style="display:flex;gap:7px">
+          <button class="btn-p" style="font-size:12px;padding:6px 16px" onclick="savePersonalTx(${t.id})">儲存</button>
+          <button class="btn-g" onclick="cancelEditTx()">取消</button>
+        </div>
+      </div>`:''}
+    </div>
+  </div>`;
+}
+
+function renderPersonal(){
+  var allM=DB.transactions.filter(t=>t.member===UI.activeMember);
+  var mo=monthTxs(allM,UI.month,UI.year);
+  var inc=mo.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+  var exp=mo.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
+  var inv=mo.filter(t=>t.type==='invest').reduce((a,t)=>a+t.amount,0);
+  var sav=mo.filter(t=>t.type==='saving').reduce((a,t)=>a+t.amount,0);
+  var ccp=mo.filter(t=>t.type==='cc_payment').reduce((a,t)=>a+t.amount,0);
+  var accs=DB.accounts.filter(a=>a.member===UI.activeMember);
+  var total=accs.filter(a=>a.type!=='cc').reduce((a,ac)=>a+ac.balance,0);
+  var net=inc-exp-inv-sav-ccp;
+  document.getElementById('p-month').textContent=`${UI.year} 年 ${UI.month+1} 月`;
+  document.getElementById('p-metrics').innerHTML=`
+    <div class="mc"><div class="mc-label">總資產</div><div class="mc-val">${fmt(total)}</div></div>
+    <div class="mc"><div class="mc-label">收入</div><div class="mc-val inc">＋${fmt(inc)}</div></div>
+    <div class="mc"><div class="mc-label">支出</div><div class="mc-val exp">－${fmt(exp)}</div></div>
+    <div class="mc"><div class="mc-label">投資</div><div class="mc-val inv">${fmt(inv)}</div></div>
+    <div class="mc"><div class="mc-label">存入共同</div><div class="mc-val gold">${fmt(sav)}</div></div>
+    <div class="mc"><div class="mc-label">本月結餘</div><div class="mc-val ${net>=0?'inc':'exp'}">${net>=0?'＋':'－'}${fmt(Math.abs(net))}</div></div>`;
+  document.getElementById('p-accounts').innerHTML=accs.length?accs.map(accHtml).join(''):'<div class="empty">尚無戶頭</div>';
+  var filtered=UI.txFilter==='all'?allM:allM.filter(t=>t.type===UI.txFilter);
+  filtered=[...filtered].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  document.getElementById('p-list-label').textContent=`所有記錄（${filtered.length} 筆）`;
+  document.getElementById('p-txlist').innerHTML=filtered.length?filtered.map(t=>txHtml(t,true)).join(''):'<div class="empty">尚無記錄</div>';
+}
+
+// ============================================================
+// Shared
+// ============================================================
+function addSharedTx(){
+  var amt=parseFloat(document.getElementById('s-amt').value);
+  var desc=document.getElementById('s-desc').value.trim();
+  if(!amt||!desc){alert('請填寫金額和描述');return;}
+  var type=document.getElementById('s-type').value;
+  var date=document.getElementById('s-date').value||today();
+  DB.sharedTxs.push({id:Date.now(),type,amount:amt,desc,cat:document.getElementById('s-cat').value,date,member:null});
+  document.getElementById('s-amt').value=''; document.getElementById('s-desc').value='';
+  save(); renderShared();
+}
+function delSharedTx(id){if(!confirm('確定刪除？'))return;DB.sharedTxs=DB.sharedTxs.filter(t=>t.id!==id);save();renderShared();}
+
+function renderShared(){
+  var txs=monthTxs(DB.sharedTxs,UI.month,UI.year);
+  var totalIn=txs.filter(t=>t.type==='contribution').reduce((a,t)=>a+t.amount,0);
+  var totalExp=txs.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
+  var totalInc=txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+  document.getElementById('s-month').textContent=`${UI.year} 年 ${UI.month+1} 月`;
+  var bal=totalIn+totalInc-totalExp;
+  document.getElementById('s-metrics').innerHTML=`
+    <div class="mc"><div class="mc-label">本月存入</div><div class="mc-val gold">＋${fmt(totalIn)}</div></div>
+    <div class="mc"><div class="mc-label">本月支出</div><div class="mc-val exp">－${fmt(totalExp)}</div></div>
+    <div class="mc"><div class="mc-label">本月收入</div><div class="mc-val inc">＋${fmt(totalInc)}</div></div>
+    <div class="mc"><div class="mc-label">餘額</div><div class="mc-val ${bal>=0?'inc':'exp'}">${bal>=0?'＋':'－'}${fmt(Math.abs(bal))}</div></div>`;
+  var members=DB.settings.members||[];
+  var allC=DB.sharedTxs.filter(t=>t.type==='contribution');
+  document.getElementById('s-member-summary').innerHTML=members.map((m,i)=>{
+    var c=MEMBER_COLORS[i]||MEMBER_COLORS[0];
+    var cum=allC.filter(t=>t.member===m).reduce((a,t)=>a+t.amount,0);
+    var mo2=txs.filter(t=>t.type==='contribution'&&t.member===m).reduce((a,t)=>a+t.amount,0);
+    return `<div class="mc" style="border-left:3px solid ${c.color}">
+      <div class="mc-label">${m} 累計</div>
+      <div class="mc-val" style="color:${c.color}">${fmt(cum)}</div>
+      <div style="font-size:10px;color:var(--ink3);font-family:'DM Mono',monospace;margin-top:3px">本月 ＋${fmt(mo2)}</div>
+    </div>`;
+  }).join('');
+  var all=DB.sharedTxs;
+  var display=UI.sharedFilter==='all'?all:all.filter(t=>t.type===UI.sharedFilter);
+  display=[...display].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  document.getElementById('s-txlist').innerHTML=display.length?display.map(t=>{
+    var cls=t.type==='contribution'?'saving':t.type;
+    var tag=t.member?memberTag(t.member):'';
+    var canDel=t.type!=='contribution';
+    return `<div class="tx-item"><div class="tx-tab ${cls}"></div>
+      <div class="tx-body">
+        <div class="tx-info"><div class="tx-desc">${t.desc}${tag}</div><div class="tx-meta">${t.date}${t.cat?' · '+t.cat:''}</div></div>
+        <div class="tx-right">
+          <div class="tx-amt ${cls}">${t.type==='expense'?'－':'＋'}${fmt(t.amount)}</div>
+          ${canDel?`<button class="btn-icon del" onclick="delSharedTx(${t.id})">✕</button>`:''}
+        </div>
+      </div></div>`;
+  }).join(''):'<div class="empty">尚無記錄</div>';
+}
+
+// ============================================================
+// Investment
+// ============================================================
+function openInvAsset(){
+  document.getElementById('ia-modal-title').textContent='新增投資項目';
+  document.getElementById('ia-save-btn').textContent='新增';
+  document.getElementById('ia-edit-id').value='';
+  document.getElementById('ia-name').value='';document.getElementById('ia-ticker').value='';document.getElementById('ia-type').value='etf';
+  document.getElementById('inv-asset-modal').classList.add('on');
+}
+function openInvAssetEdit(id){
+  var a=DB.invAssets.find(x=>x.id===id); if(!a) return;
+  document.getElementById('ia-modal-title').textContent='編輯投資項目';
+  document.getElementById('ia-save-btn').textContent='儲存';
+  document.getElementById('ia-edit-id').value=id;
+  document.getElementById('ia-name').value=a.name;
+  document.getElementById('ia-ticker').value=a.ticker||'';
+  document.getElementById('ia-type').value=a.type;
+  document.getElementById('inv-asset-modal').classList.add('on');
+}
+function closeInvAsset(){document.getElementById('inv-asset-modal').classList.remove('on');}
+function saveInvAsset(){
+  var name=document.getElementById('ia-name').value.trim(); if(!name){alert('請輸入項目名稱');return;}
+  var editId=document.getElementById('ia-edit-id').value;
+  var ticker=document.getElementById('ia-ticker').value.trim().toUpperCase();
+  var type=document.getElementById('ia-type').value;
+  if(editId){
+    var a=DB.invAssets.find(x=>x.id===parseInt(editId));
+    if(a){ a.name=name; a.ticker=ticker; a.type=type; }
+  } else {
+    DB.invAssets.push({id:Date.now(),name,ticker,type,member:UI.invMember});
+  }
+  closeInvAsset(); save(); renderInvest(); populateSelects();
+}
+function delInvAsset(id){
+  if(!confirm('確定刪除此投資項目？相關投資記錄也會一併刪除（個人帳本中的對應支出記錄會保留，但不再連結項目）'))return;
+  DB.invAssets=DB.invAssets.filter(a=>a.id!==id);
+  DB.invTxs.filter(t=>t.assetId===id).forEach(t=>{
+    var ptx=DB.transactions.find(x=>x.type==='invest'&&x.invAssetId===id&&x.date===t.date&&Math.abs(x.amount-t.amount)<1);
+    if(ptx) ptx.invAssetId=null;
+  });
+  DB.invTxs=DB.invTxs.filter(t=>t.assetId!==id);
+  save(); renderInvest(); populateSelects();
+}
+
+var priceCache={};
+async function fetchPrice(ticker){
+  if(!ticker) return null;
+  if(priceCache[ticker]&&Date.now()-priceCache[ticker].ts<300000) return priceCache[ticker];
+  try{
+    var r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=2d`,{mode:'cors'});
+    if(!r.ok) throw new Error('failed');
+    var j=await r.json(); var res=j.chart?.result?.[0];
+    if(!res) return null;
+    var meta=res.meta; var price=meta.regularMarketPrice; var prev=meta.chartPreviousClose;
+    var chg=prev?(price-prev)/prev*100:0;
+    var result={price,chg,ts:Date.now()};
+    priceCache[ticker]=result; return result;
+  }catch(e){return null;}
+}
+
+async function renderInvest(){
+  var memberAssets=DB.invAssets.filter(a=>a.member===UI.invMember);
+  var allInvTxs=DB.invTxs.filter(t=>t.member===UI.invMember);
+  var totalInvested=allInvTxs.reduce((a,t)=>a+t.amount,0);
+  document.getElementById('inv-metrics').innerHTML=`
+    <div class="mc"><div class="mc-label">累計投入</div><div class="mc-val inv">${fmt(totalInvested)}</div></div>
+    <div class="mc"><div class="mc-label">投資項目</div><div class="mc-val">${memberAssets.length}</div></div>`;
+
+  var assetHtmls=await Promise.all(memberAssets.map(async a=>{
+    var txs=allInvTxs.filter(t=>t.assetId===a.id);
+    var invested=txs.reduce((s,t)=>s+t.amount,0);
+    var shares=txs.filter(t=>t.shares).reduce((s,t)=>s+t.shares,0);
+    var priceInfo=a.ticker?await fetchPrice(a.ticker):null;
+    var mktVal=priceInfo&&shares?shares*priceInfo.price:null;
+    var gain=mktVal?mktVal-invested:null;
+    var priceTag='';
+    if(priceInfo){
+      var cls=priceInfo.chg>0?'price-up':priceInfo.chg<0?'price-down':'price-flat';
+      priceTag=`<span class="price-tag ${cls}">${priceInfo.price.toFixed(2)} ${priceInfo.chg>=0?'▲':'▼'}${Math.abs(priceInfo.chg).toFixed(2)}%</span>`;
+    }
+    return `<div class="inv-asset-card">
+      <div class="inv-asset-header">
+        <div>
+          <div class="inv-asset-name">${a.name} ${priceTag}</div>
+          <div class="inv-asset-ticker">${INV_TYPE[a.type]||a.type}${a.ticker?' ('+a.ticker+')':''}</div>
+        </div>
+        <div class="goal-actions">
+          <button class="btn-icon" onclick="openInvAssetEdit(${a.id})" title="編輯">✎</button>
+          <button class="btn-icon del" onclick="delInvAsset(${a.id})" title="刪除">✕</button>
+        </div>
+      </div>
+      <div class="inv-stats">
+        <div class="inv-stat"><div class="inv-stat-label">累計投入</div><div class="inv-stat-val">${fmt(invested)}</div></div>
+        ${shares?`<div class="inv-stat"><div class="inv-stat-label">持有股數</div><div class="inv-stat-val">${shares}</div></div>`:''}
+        ${mktVal!==null?`<div class="inv-stat"><div class="inv-stat-label">市值</div><div class="inv-stat-val" style="color:var(--blue)">${fmt(Math.round(mktVal))}</div></div>`:''}
+        ${gain!==null?`<div class="inv-stat"><div class="inv-stat-label">損益</div><div class="inv-stat-val" style="color:${gain>=0?'var(--green)':'var(--orange)'}">${gain>=0?'＋':''}${fmt(Math.round(gain))}</div></div>`:''}
+      </div>
+    </div>`;
+  }));
+
+  document.getElementById('inv-assets-list').innerHTML=assetHtmls.length?assetHtmls.join(''):'<div class="empty">尚無投資項目，點右上角新增</div>';
+
+  // filter buttons
+  var filterBtns='<button class="f-btn'+(UI.invAssetFilter==='all'?' on':'')+'" onclick="setInvFilter(\'all\',this)">全部</button>';
+  memberAssets.forEach(a=>{filterBtns+=`<button class="f-btn${UI.invAssetFilter===String(a.id)?' on':''}" onclick="setInvFilter('${a.id}',this)">${a.name}</button>`;});
+  document.getElementById('inv-asset-filter').innerHTML=filterBtns;
+
+  // tx list
+  var invTxDisplay=UI.invAssetFilter==='all'?allInvTxs:allInvTxs.filter(t=>String(t.assetId)===UI.invAssetFilter);
+  invTxDisplay=[...invTxDisplay].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  document.getElementById('inv-txlist').innerHTML=invTxDisplay.length?invTxDisplay.map(t=>{
+    var asset=DB.invAssets.find(a=>a.id===t.assetId);
+    return `<div class="tx-item">
+      <div class="tx-tab invest"></div>
+      <div class="tx-body">
+        <div class="tx-info">
+          <div class="tx-desc">${t.desc||'投資'}${memberTag(t.member)}</div>
+          <div class="tx-meta">${t.date} · ${asset?asset.name:'（未指定項目）'}${t.shares?' · '+t.shares+' 股':''}</div>
+        </div>
+        <div class="tx-right">
+          <div class="tx-amt invest">－${fmt(t.amount)}</div>
+          <button class="btn-icon" onclick="openInvTxEdit(${t.id})" title="編輯">✎</button>
+          <button class="btn-icon del" onclick="delInvTx(${t.id})" title="刪除">✕</button>
+        </div>
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty">尚無投資記錄</div>';
+}
+
+function setInvFilter(f,el){
+  UI.invAssetFilter=f;
+  document.querySelectorAll('#inv-asset-filter .f-btn').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on'); renderInvest();
+}
+
+function findPairedPersonalTx(invTx){
+  if(invTx.srcTxId){ var byId=DB.transactions.find(x=>x.id===invTx.srcTxId); if(byId) return byId; }
+  // fallback：用 assetId + date + amount 配對個人帳本中對應的投資支出記錄（舊資料相容）
+  return DB.transactions.find(x=>x.type==='invest'&&x.invAssetId===invTx.assetId&&x.date===invTx.date&&Math.abs(x.amount-invTx.amount)<1);
+}
+
+function openInvTxEdit(id){
+  var t=DB.invTxs.find(x=>x.id===id); if(!t) return;
+  document.getElementById('ite-id').value=id;
+  document.getElementById('ite-amt').value=t.amount;
+  document.getElementById('ite-shares').value=t.shares||'';
+  document.getElementById('ite-desc').value=t.desc||'';
+  document.getElementById('ite-date').value=t.date;
+  document.getElementById('inv-tx-edit-modal').classList.add('on');
+}
+function closeInvTxEdit(){ document.getElementById('inv-tx-edit-modal').classList.remove('on'); }
+function saveInvTxEdit(){
+  var id=parseInt(document.getElementById('ite-id').value);
+  var t=DB.invTxs.find(x=>x.id===id); if(!t) return;
+  var ptx=findPairedPersonalTx(t); // 找配對的個人帳本記錄（用舊資料配對）
+  var oldAmt=t.amount;
+  var newAmt=parseFloat(document.getElementById('ite-amt').value)||0;
+  var newShares=document.getElementById('ite-shares').value?parseFloat(document.getElementById('ite-shares').value):null;
+  var newDesc=document.getElementById('ite-desc').value.trim()||t.desc;
+  var newDate=document.getElementById('ite-date').value||t.date;
+  // 同步更新個人帳本對應記錄與戶頭餘額
+  if(ptx){
+    var acc=DB.accounts.find(a=>a.id===ptx.accId);
+    if(acc){ acc.balance+=oldAmt; acc.balance-=newAmt; } // 還原舊金額，套用新金額
+    ptx.amount=newAmt; ptx.desc=newDesc; ptx.date=newDate; ptx.shares=newShares;
+  }
+  t.amount=newAmt; t.shares=newShares; t.desc=newDesc; t.date=newDate;
+  closeInvTxEdit(); save(); renderAll();
+}
+
+function delInvTx(id){
+  if(!confirm('確定刪除？對應的個人帳本支出記錄也會一併刪除'))return;
+  var t=DB.invTxs.find(x=>x.id===id); if(!t) return;
+  var ptx=findPairedPersonalTx(t);
+  if(ptx){
+    var acc=DB.accounts.find(a=>a.id===ptx.accId); if(acc) acc.balance+=t.amount;
+    DB.transactions=DB.transactions.filter(x=>x.id!==ptx.id);
+  }
+  DB.invTxs=DB.invTxs.filter(x=>x.id!==id);
+  save(); renderAll();
+}
+
+
+// ============================================================
+// Goals
+// ============================================================
+function addGoal(){
+  var name=document.getElementById('g-name').value.trim(); if(!name){alert('請輸入計畫名稱');return;}
+  DB.goals.push({id:Date.now(),name,target:parseFloat(document.getElementById('g-target').value)||0,note:document.getElementById('g-note').value.trim(),done:false});
+  document.getElementById('g-name').value=''; document.getElementById('g-target').value=''; document.getElementById('g-note').value='';
+  save(); renderGoals(); populateSelects();
+}
+function delGoal(id){if(!confirm('確定刪除？'))return;DB.goals=DB.goals.filter(g=>g.id!==id);save();renderGoals();populateSelects();}
+function toggleGoalDone(id){var g=DB.goals.find(x=>x.id===id);if(!g)return;g.done=!g.done;save();renderGoals();populateSelects();}
+function openGoalEdit(id){
+  var g=DB.goals.find(x=>x.id===id); if(!g) return;
+  document.getElementById('ge-id').value=id;
+  document.getElementById('ge-name').value=g.name;
+  document.getElementById('ge-target').value=g.target;
+  document.getElementById('ge-note').value=g.note||'';
+  document.getElementById('goal-edit-modal').classList.add('on');
+}
+function closeGoalEdit(){document.getElementById('goal-edit-modal').classList.remove('on');}
+function saveGoalEdit(){
+  var id=parseInt(document.getElementById('ge-id').value);
+  var g=DB.goals.find(x=>x.id===id); if(!g) return;
+  g.name=document.getElementById('ge-name').value.trim()||g.name;
+  g.target=parseFloat(document.getElementById('ge-target').value)||0;
+  g.note=document.getElementById('ge-note').value.trim();
+  closeGoalEdit(); save(); renderGoals(); populateSelects();
+}
+function goalCardHtml(g){
+  var members=DB.settings.members||[];
+  var gc=DB.sharedTxs.filter(t=>t.type==='contribution'&&t.goalId===g.id);
+  if(!gc.length) gc=DB.sharedTxs.filter(t=>t.type==='contribution'&&!t.goalId);
+  var byMember=members.map((m,i)=>{var c=MEMBER_COLORS[i]||MEMBER_COLORS[0];return{name:m,amt:gc.filter(t=>t.member===m).reduce((a,t)=>a+t.amount,0),color:c.color,bg:c.bg};});
+  var total=byMember.reduce((a,m)=>a+m.amt,0);
+  var pct=g.target>0?Math.min(100,Math.round(total/g.target*100)):0;
+  var chips=byMember.map(m=>`<div class="member-chip" style="background:${m.bg};border-left:3px solid ${m.color}">
+    <div class="mc-name" style="color:${m.color}">${m.name}</div>
+    <div class="mc-val2" style="color:${m.color}">${fmt(m.amt)}</div>
+    <div class="mc-pct">佔 ${total>0?Math.round(m.amt/total*100):0}%</div>
+  </div>`).join('');
+  return `<div class="goal-card${g.done?' done':''}">
+    <div class="goal-header">
+      <div style="flex:1;min-width:0">
+        <div class="goal-name">${g.name}${g.done?'<span class="done-badge">已完成 🎉</span>':''}</div>
+        ${g.note?`<div class="goal-note">${g.note}</div>`:''}
+      </div>
+      <div class="goal-actions">
+        <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3)">目標 ${fmt(g.target)}</span>
+        ${!g.done?`<button class="btn-icon" onclick="openGoalEdit(${g.id})">✎</button>`:''}
+        <button class="btn-icon${g.done?'':' ok'}" onclick="toggleGoalDone(${g.id})">${g.done?'↩':'✓'}</button>
+        <button class="btn-icon del" onclick="delGoal(${g.id})">✕</button>
+      </div>
+    </div>
+    <div class="prog-bar"><div class="prog-fill" style="width:${pct}%;background:${g.done?'var(--green)':'var(--gold)'}"></div></div>
+    <div class="prog-labels"><span>${fmt(total)} 已存</span><span>${pct}%</span><span>${g.done?'已達成':'剩 '+fmt(Math.max(0,g.target-total))}</span></div>
+    <div class="goal-members">${chips}</div>
+  </div>`;
+}
+function renderGoals(){
+  var active=DB.goals.filter(g=>!g.done), done=DB.goals.filter(g=>g.done);
+  document.getElementById('g-active-list').innerHTML=active.length?active.map(goalCardHtml).join(''):'<div class="empty">尚無進行中的計畫</div>';
+  var ds=document.getElementById('g-done-section'); ds.style.display=done.length?'block':'none';
+  if(done.length) document.getElementById('g-done-list').innerHTML=done.map(goalCardHtml).join('');
+}
+
+// ============================================================
+// Report
+// ============================================================
+function renderReport(){
+  buildReportSwitcher();
+  document.getElementById('r-month').textContent=`${UI.year} 年 ${UI.month+1} 月`;
+  var isShared=UI.reportView==='shared', isInvest=UI.reportView==='invest';
+  var isMember=UI.reportView.startsWith('m_');
+  var mName=isMember?UI.reportView.slice(2):'';
+  var pool=[],spool=[],invPool=[];
+  if(isShared){ spool=monthTxs(DB.sharedTxs,UI.month,UI.year); }
+  else if(isInvest){ invPool=DB.invTxs.filter(t=>{var d=new Date(t.date);return d.getMonth()===UI.month&&d.getFullYear()===UI.year;}); }
+  else if(isMember){ pool=monthTxs(DB.transactions.filter(t=>t.member===mName),UI.month,UI.year); }
+  else { pool=monthTxs(DB.transactions,UI.month,UI.year); }
+  var inc=(isShared?spool:pool).filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+  var exp=(isShared?spool:pool).filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
+  var sav=(!isShared&&!isInvest?pool:[]).filter(t=>t.type==='saving').reduce((a,t)=>a+t.amount,0);
+  var inv=isInvest?invPool.reduce((a,t)=>a+t.amount,0):pool.filter(t=>t.type==='invest').reduce((a,t)=>a+t.amount,0);
+  var net=inc-exp-sav;
+  document.getElementById('r-metrics').innerHTML=`
+    ${isInvest?`<div class="mc"><div class="mc-label">本月投入</div><div class="mc-val inv">－${fmt(inv)}</div></div>
+    <div class="mc"><div class="mc-label">累計投入</div><div class="mc-val inv">${fmt(DB.invTxs.reduce((a,t)=>a+t.amount,0))}</div></div>`:
+    `<div class="mc"><div class="mc-label">收入</div><div class="mc-val inc">＋${fmt(inc)}</div></div>
+    <div class="mc"><div class="mc-label">支出</div><div class="mc-val exp">－${fmt(exp)}</div></div>
+    ${!isShared?`<div class="mc"><div class="mc-label">存入共同</div><div class="mc-val gold">${fmt(sav)}</div></div>`:''}
+    <div class="mc"><div class="mc-label">結餘</div><div class="mc-val ${net>=0?'inc':'exp'}">${net>=0?'＋':'－'}${fmt(Math.abs(net))}</div></div>`}`;
+
+  // Trend chart
+  var labels=[],datasets=[];
+  var members=DB.settings.members||[];
+  if(isInvest){
+    var invD=[];
+    for(let i=5;i>=0;i--){
+      let mo=UI.month-i,yr=UI.year; while(mo<0){mo+=12;yr--;}
+      labels.push(`${yr}/${mo+1}`);
+      invD.push(DB.invTxs.filter(t=>{var d=new Date(t.date);return d.getMonth()===mo&&d.getFullYear()===yr;}).reduce((a,t)=>a+t.amount,0));
+    }
+    datasets=[{label:'投資',data:invD,backgroundColor:'#5C7A9E',borderRadius:2,barPercentage:.65}];
+  } else if(UI.reportView==='all'){
+    var memberData=members.map(()=>[]);
+    for(let i=5;i>=0;i--){
+      let mo=UI.month-i,yr=UI.year; while(mo<0){mo+=12;yr--;}
+      labels.push(`${yr}/${mo+1}`);
+      members.forEach((m,mi)=>{
+        var me=monthTxs(DB.transactions.filter(t=>t.member===m),mo,yr);
+        memberData[mi].push(me.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0));
+      });
+    }
+    datasets=members.map((m,i)=>({label:m+'支出',data:memberData[i],backgroundColor:(MEMBER_COLORS[i]||MEMBER_COLORS[0]).color+'CC',borderRadius:2,barPercentage:.6}));
+  } else {
+    var iD=[],eD=[],sD=[];
+    for(let i=5;i>=0;i--){
+      let mo=UI.month-i,yr=UI.year; while(mo<0){mo+=12;yr--;}
+      labels.push(`${yr}/${mo+1}`);
+      var p=isShared?[]:monthTxs(isMember?DB.transactions.filter(t=>t.member===mName):DB.transactions,mo,yr);
+      var sp=isShared?monthTxs(DB.sharedTxs,mo,yr):[];
+      iD.push((isShared?sp:p).filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0));
+      eD.push((isShared?sp:p).filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0));
+      sD.push((!isShared?p:[]).filter(t=>t.type==='saving').reduce((a,t)=>a+t.amount,0));
+    }
+    datasets=[
+      {label:'收入',data:iD,backgroundColor:'#7C9E7A',borderRadius:2,barPercentage:.6},
+      {label:'支出',data:eD,backgroundColor:'#C4714A',borderRadius:2,barPercentage:.6},
+      ...(!isShared?[{label:'存入',data:sD,backgroundColor:'#B89A5A',borderRadius:2,barPercentage:.6}]:[]),
+    ];
+  }
+  if(tChart) tChart.destroy();
+  tChart=new Chart(document.getElementById('trendChart'),{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{
+    x:{grid:{display:false},ticks:{font:{family:'DM Mono',size:10},color:'#9A9890',autoSkip:false}},
+    y:{grid:{color:'rgba(0,0,0,0.04)'},border:{display:false},ticks:{font:{family:'DM Mono',size:10},color:'#9A9890',callback:v=>v.toLocaleString()}}
+  }}});
+  // legend
+  if(UI.reportView==='all'){
+    document.getElementById('trend-legend').innerHTML=members.map((m,i)=>{var c=(MEMBER_COLORS[i]||MEMBER_COLORS[0]).color;return `<span class="legend-item"><span class="legend-dot" style="background:${c}"></span>${m} 支出</span>`;}).join('');
+  } else if(isInvest){
+    document.getElementById('trend-legend').innerHTML=`<span class="legend-item"><span class="legend-dot" style="background:#5C7A9E"></span>投資金額</span>`;
+  } else {
+    document.getElementById('trend-legend').innerHTML=`
+      <span class="legend-item"><span class="legend-dot" style="background:#7C9E7A"></span>收入</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#C4714A"></span>支出</span>
+      ${!isShared?`<span class="legend-item"><span class="legend-dot" style="background:#B89A5A"></span>存入</span>`:''}`;
+  }
+  // donut
+  var catSrc=isShared?spool.filter(t=>t.type==='expense'):pool.filter(t=>t.type==='expense');
+  var cats={}; catSrc.forEach(t=>{cats[t.cat||'其他']=(cats[t.cat||'其他']||0)+t.amount;});
+  var cl=Object.keys(cats),cd=Object.values(cats);
+  if(cChart){cChart.destroy();cChart=null;}
+  if(cl.length){
+    cChart=new Chart(document.getElementById('catChart'),{type:'doughnut',data:{labels:cl,datasets:[{data:cd,backgroundColor:CAT_COLORS.slice(0,cl.length),borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false}}}});
+    var tot=cd.reduce((a,v)=>a+v,0);
+    document.getElementById('cat-legend').innerHTML=cl.map((l,i)=>`<div style="display:flex;align-items:center;gap:5px;font-size:11px;margin-bottom:5px;font-family:'DM Mono',monospace"><span style="width:9px;height:9px;border-radius:2px;flex-shrink:0;background:${CAT_COLORS[i]}"></span><span style="color:var(--ink2)">${l}</span><span style="margin-left:auto;color:var(--ink3)">${Math.round(cd[i]/tot*100)}%</span></div>`).join('');
+  } else {
+    document.getElementById('cat-legend').innerHTML='<div class="empty" style="padding:14px 0">本月無支出</div>';
+  }
+}
+
+// ============================================================
+// Filters
+// ============================================================
+function setTxFilter(f,el){UI.txFilter=f;document.querySelectorAll('#pg-personal .filter-row .f-btn').forEach(b=>b.classList.remove('on'));el.classList.add('on');renderPersonal();}
+function setSharedFilter(f,el){UI.sharedFilter=f;document.querySelectorAll('#pg-shared .filter-row .f-btn').forEach(b=>b.classList.remove('on'));el.classList.add('on');renderShared();}
+
+// ============================================================
+// Settings
+// ============================================================
+function openSettings(){
+  document.getElementById('set-title').value=DB.settings.title||'';
+  document.getElementById('set-db-url').value=FIREBASE_DB_URL;
+  var mi=document.getElementById('member-inputs'); mi.innerHTML='';
+  (DB.settings.members||[]).forEach((m,i)=>addMemberInputRow(m,i));
+  document.getElementById('settings-modal').classList.add('on');
+}
+function closeSettings(){document.getElementById('settings-modal').classList.remove('on');}
+function addMemberInput(){addMemberInputRow('',document.querySelectorAll('#member-inputs input').length);}
+function addMemberInputRow(val,idx){
+  if(idx>=4) return;
+  var c=MEMBER_COLORS[idx]||MEMBER_COLORS[0];
+  var mi=document.getElementById('member-inputs');
+  var row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;align-items:center';
+  row.innerHTML=`<span style="width:10px;height:10px;border-radius:50%;background:${c.color};flex-shrink:0"></span>
+    <input value="${val}" placeholder="成員名稱" style="flex:1"/>
+    ${idx>=2?`<button class="btn-icon del" onclick="this.parentElement.remove()">✕</button>`:''}`;
+  mi.appendChild(row);
+}
+function saveSettings(){
+  DB.settings.title=document.getElementById('set-title').value.trim()||'帳本';
+  var newUrl=document.getElementById('set-db-url').value.trim();
+  var members=[...document.querySelectorAll('#member-inputs input')].map(i=>i.value.trim()).filter(Boolean);
+  if(!members.length) members=['我','他'];
+  DB.settings.members=members;
+  if(!UI.activeMember||!members.includes(UI.activeMember)) UI.activeMember=members[0];
+  if(!UI.invMember||!members.includes(UI.invMember)) UI.invMember=members[0];
+  document.getElementById('site-title').textContent=DB.settings.title;
+  closeSettings();
+  if(newUrl&&newUrl!==FIREBASE_DB_URL){FIREBASE_DB_URL=newUrl;initFirebase(newUrl);}
+  else{save();renderAll();}
+}
+
+// ============================================================
+// Init
+// ============================================================
+document.getElementById('p-date').value=today();
+document.getElementById('s-date').value=today();
+UI.activeMember=null; UI.invMember=null; UI.reportView='all';
+initFirebase(FIREBASE_DB_URL);
+</script>
+</body>
+</html>
